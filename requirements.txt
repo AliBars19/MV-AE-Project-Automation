@@ -1,0 +1,5 @@
+Required Libraries
+
+- Flasks
+- pytube
+- requests
