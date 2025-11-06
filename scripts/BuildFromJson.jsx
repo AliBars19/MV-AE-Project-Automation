@@ -73,11 +73,18 @@ function main() {
     var parsed = parseLyricsFile(job.lyrics_file);
     pushLyricsToCarousel(lyricComp, parsed.linesArray);
     setAudioMarkersFromTArray(lyricComp, parsed.tAndText);
-
+    // ------------------ Phase 3: Album Art Replacement ------------------
+    try {
+        var assetsComp = findPrecompByName("Assets 1");
+        replaceAlbumArt(assetsComp, imageItem);
+        alert("✅ Album art replaced inside Assets 1");
+    } catch (e) {
+        alert("⚠️ Album art replacement skipped: " + e.toString());
+    }
     app.endUndoGroup();
     alert("✅ Build complete for Job " + job.job_id + " with lyrics + markers!");
-}
-
+    }
+    
 // -------------------------------------------------------
 // HELPER FUNCTIONS
 // -------------------------------------------------------
@@ -215,6 +222,36 @@ function parseLyricsFile(absPath) {
     }
     return { linesArray: linesArray, tAndText: tAndText };
 }
+
+// -------------------------------------------------------
+// --- Phase 3 helpers: album-art replacement -------------
+// -------------------------------------------------------
+
+function findPrecompByName(name) {
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var item = app.project.item(i);
+        if (item instanceof CompItem && item.name === name) {
+            return item;
+        }
+    }
+    throw new Error("Precomp not found: " + name);
+}
+
+function replaceAlbumArt(assetComp, newImageItem) {
+    // Find the first image layer (or one containing .jpg / .png)
+    for (var i = 1; i <= assetComp.numLayers; i++) {
+        var lyr = assetComp.layer(i);
+        if (lyr.source && lyr.source instanceof FootageItem) {
+            var name = lyr.source.name.toLowerCase();
+            if (name.indexOf(".jpg") !== -1 || name.indexOf(".png") !== -1) {
+                lyr.replaceSource(newImageItem, false);
+                return;
+            }
+        }
+    }
+    alert("No image layer found in " + assetComp.name);
+}
+
 
 // -------------------------------------------------------
 main();
