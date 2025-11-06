@@ -150,49 +150,41 @@ def lyrics(job_folder):
 
 #-------------------------MAIN----------------------------------------
 
+def batch_generate_jobs():
+    base_jobs = 12  # number of jobs to create
+    for i in range(1, base_jobs + 1):
+        job_id = i
+        job_folder = f"jobs/job_{job_id:03}"
+        os.makedirs(job_folder, exist_ok=True)
+        print(f"\n--- Building Job {job_id:03} ---")
 
+        mp3url = input(f"[Job {job_id}] Enter AUDIO URL: ")
+        audio_path = download_audio(mp3url, job_folder)
 
-def main():
-    base_folder = "jobs"
-    os.makedirs(base_folder, exist_ok=True)
+        start_time = input(f"[Job {job_id}] Enter start time (MM:SS): ")
+        end_time = input(f"[Job {job_id}] Enter end time (MM:SS): ")
+        clipped_path = trimming_audio(job_folder, start_time, end_time)
 
-    # Find the highest existing job number
-    existing_jobs = [int(name.split('_')[1]) for name in os.listdir(base_folder) if name.startswith("job_")]
-    job_id = max(existing_jobs, default=0) + 1
+        imgurl = input(f"[Job {job_id}] Enter IMAGE URL: ")
+        image_path = image_download(job_folder, imgurl)
 
-    job_folder = os.path.join(base_folder, f"job_{job_id:03}")
-    os.makedirs(job_folder, exist_ok=True)
+        colors = image_extraction(job_folder)
+        lyrics(job_folder)
 
-    #----calling all functions
+        job_data = {
+            "job_id": job_id,
+            "audio_source": audio_path.replace("\\", "/"),
+            "audio_trimmed": clipped_path.replace("\\", "/"),
+            "cover_image": image_path.replace("\\", "/"),
+            "colors": colors,
+            "lyrics_file": f"{job_folder}/lyrics.txt".replace("\\", "/"),
+            "job_folder": job_folder.replace("\\", "/")
+        }
+        json_path = os.path.join(job_folder, "job_data.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(job_data, f, indent=4)
+        print(f"Job {job_id:03} ready.")
 
-    mp3url = str(input("\n" +"Enter AUDIO URL: "))
-    audio_path = download_audio(mp3url,job_folder)
-
-    start_time = str(input("\n" +"AUDIO TRIMMING: Enter the start time in MM:SS "))
-    end_time = str(input("\n" +"AUDIO TRIMMING: Enter the end time in MM:SS "))
-    clipped_path = trimming_audio(job_folder,start_time,end_time)
-
-    imgurl = str(input("\n" +"Enter IMAGE URL: "))
-    image_path = image_download(job_folder,imgurl)
-
-    colors = image_extraction(job_folder)
-
-    lyrics(job_folder)
-    lyrics_path = os.path.join(job_folder, "lyrics.txt")
-
-    #----------------------GENERATING JSON
-
-    job_data = {
-        "job_id":  job_id,
-        "audio_source":  audio_path.replace("\\","/"),
-        "audio_trimmed":  clipped_path.replace("\\","/"),
-        "cover_image": image_path.replace("\\","/"),
-        "colors": colors,
-        "lyrics_file": lyrics_path.replace("\\","/")
-    }
-    json_path = os.path.join(job_folder, "job_data.json")
-    with open(json_path, 'w', encoding="utf-8") as f:
-        json.dump(job_data,f,indent=4)
 
 if __name__ == "__main__":
-    main()
+    batch_generate_jobs()
