@@ -12,15 +12,6 @@ from io import BytesIO
 from colorthief import ColorThief #For image colour extraction
 import matplotlib.pyplot as plt
 
-#-----------------------creating job folders
-
-job_id = 1
-job_folder = f"jobs/job_{job_id:03}"
-os.makedirs(job_folder, exist_ok=True)
-print("created", job_folder)
-
-#-----------------------
-mp3URL = str(input("Enter Audio URL"))
 #------------------------------------------- EXTRACTING AUDIO
 
 def download_audio(url,job_folder):
@@ -42,12 +33,14 @@ def download_audio(url,job_folder):
 
 #---------------------------------------- TRIMMING AUDIO
 
-def mmss_to_millisecondsaudio(time_str):
-    m, s = map(int, time_str.split(':'))
-    return ((m * 60) + s) * 1000
+
  
 def trimming_audio(job_folder,start_time, end_time):
 
+    def mmss_to_millisecondsaudio(time_str):
+        m, s = map(int, time_str.split(':'))
+        return ((m * 60) + s) * 1000
+    
     audio_import = os.path.join(job_folder,'audio_source.mp3')# Load audio file
     song = AudioSegment.from_file(audio_import, format="mp3")
     
@@ -82,7 +75,7 @@ def image_download(job_folder,url):
 
 #--------------------------------------- EXTRACTING COLORS FROM PNG
 
-def image_extraction(job_folder,colour_count=4):
+def image_extraction(job_folder):
     image_import_path = os.path.join(job_folder,'cover.png')
 
     extractionimg = ColorThief(image_import_path) # setup image for extraction
@@ -155,4 +148,51 @@ def lyrics(job_folder):
 
 
 
-#-------------------------GENERATING JSON FILE FROM ALL DATA----------------------------------------
+#-------------------------MAIN----------------------------------------
+
+
+
+def main():
+    base_folder = "jobs"
+    os.makedirs(base_folder, exist_ok=True)
+
+    # Find the highest existing job number
+    existing_jobs = [int(name.split('_')[1]) for name in os.listdir(base_folder) if name.startswith("job_")]
+    job_id = max(existing_jobs, default=0) + 1
+
+    job_folder = os.path.join(base_folder, f"job_{job_id:03}")
+    os.makedirs(job_folder, exist_ok=True)
+
+    #----calling all functions
+
+    mp3url = str(input("\n" +"Enter AUDIO URL: "))
+    audio_path = download_audio(mp3url,job_folder)
+
+    start_time = str(input("\n" +"AUDIO TRIMMING: Enter the start time in MM:SS "))
+    end_time = str(input("\n" +"AUDIO TRIMMING: Enter the end time in MM:SS "))
+    clipped_path = trimming_audio(job_folder,start_time,end_time)
+
+    imgurl = str(input("\n" +"Enter IMAGE URL: "))
+    image_path = image_download(job_folder,imgurl)
+
+    colors = image_extraction(job_folder)
+
+    lyrics(job_folder)
+    lyrics_path = os.path.join(job_folder, "lyrics.txt")
+
+    #----------------------GENERATING JSON
+
+    job_data = {
+        "job_id":  job_id,
+        "audio_source":  audio_path.replace("\\","/"),
+        "audio_trimmed":  clipped_path.replace("\\","/"),
+        "cover_image": image_path.replace("\\","/"),
+        "colors": colors,
+        "lyrics_file": lyrics_path.replace("\\","/")
+    }
+    json_path = os.path.join(job_folder, "job_data.json")
+    with open(json_path, 'w', encoding="utf-8") as f:
+        json.dump(job_data,f,indent=4)
+
+if __name__ == "__main__":
+    main()

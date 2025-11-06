@@ -1,0 +1,72 @@
+[
+    {
+        "t": 1.0,
+        "lyric_prev": "",
+        "lyric_current": "ONE",
+        "lyric_next1": "TWO",
+        "lyric_next2": "THREE"
+    },
+    {
+        "t": 2.0,
+        "lyric_prev": "ONE",
+        "lyric_current": "TWO",
+        "lyric_next1": "THREE",
+        "lyric_next2": "FOUR"
+    },
+    {
+        "t": 3.0,
+        "lyric_prev": "TWO",
+        "lyric_current": "THREE",
+        "lyric_next1": "FOUR",
+        "lyric_next2": "FIVE"
+    },
+    {
+        "t": 4.0,
+        "lyric_prev": "THREE",
+        "lyric_current": "FOUR",
+        "lyric_next1": "FIVE",
+        "lyric_next2": "SIX"
+    },
+    {
+        "t": 5.0,
+        "lyric_prev": "FOUR",
+        "lyric_current": "FIVE",
+        "lyric_next1": "SIX",
+        "lyric_next2": "SEVEN"
+    },
+    {
+        "t": 6.0,
+        "lyric_prev": "FIVE",
+        "lyric_current": "SIX",
+        "lyric_next1": "SEVEN",
+        "lyric_next2": "EIGHT"
+    },
+    {
+        "t": 7.0,
+        "lyric_prev": "SIX",
+        "lyric_current": "SEVEN",
+        "lyric_next1": "EIGHT",
+        "lyric_next2": "NINE"
+    },
+    {
+        "t": 8.0,
+        "lyric_prev": "SEVEN",
+        "lyric_current": "EIGHT",
+        "lyric_next1": "NINE",
+        "lyric_next2": "TEN"
+    },
+    {
+        "t": 9.0,
+        "lyric_prev": "EIGHT",
+        "lyric_current": "NINE",
+        "lyric_next1": "TEN",
+        "lyric_next2": ""
+    },
+    {
+        "t": 10.0,
+        "lyric_prev": "NINE",
+        "lyric_current": "TEN",
+        "lyric_next1": "",
+        "lyric_next2": ""
+    }
+]
