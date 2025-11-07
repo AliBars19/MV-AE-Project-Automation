@@ -10,7 +10,6 @@
 //  4) Pick the /jobs folder → items import + comps wired + queued
 // -------------------------------------------------------
 
-
 // -----------------------------
 // JSON Polyfill (for older AE)
 // -----------------------------
@@ -83,12 +82,6 @@ function main() {
         if (!audioFile.exists) { alert("⚠️ Missing audio:\n" + jobData.audio_trimmed); continue; }
         if (!imageFile.exists) { alert("⚠️ Missing image:\n" + jobData.cover_image); continue; }
 
-        // Import into correct folders
-        var audioItem = app.project.importFile(new ImportOptions(audioFile));
-        var imageItem = app.project.importFile(new ImportOptions(imageFile));
-        moveItemToFolder(audioItem, "Background");
-        moveItemToFolder(imageItem, "Foreground");
-
         // Duplicate MAIN
         var template = findCompByName("MAIN");
         var newComp = template.duplicate();
@@ -97,15 +90,11 @@ function main() {
         // Move duplicated comp into correct OUTPUT folder
         moveItemToFolder(newComp, "OUTPUT" + jobData.job_id);
 
-        replaceLayer(newComp, "AUDIO", audioItem);
-        replaceLayer(newComp, "COVER", imageItem);
+        // Relink existing imported assets instead of replacing
+        relinkFootageByName("AUDIO", jobData.audio_trimmed);
+        relinkFootageByName("COVER", jobData.cover_image);
 
-        // Update BG colors (MAIN + BACKGROUND N)
-        // safest: only set colors on BACKGROUND N → GRADIENT layer
         applyColorsToBackground(jobData.job_id, jobData.colors);
-
-        // (optional) if you *also* want to recolor any 4-Color Gradient
-        // that might exist inside the duplicated MAIN comp:
         applyColorsWherePresent(newComp, jobData.colors);
 
 
@@ -123,11 +112,12 @@ function main() {
         // Album art
         try {
             var assetsComp = findCompByName("Assets " + jobData.job_id);
-            replaceAlbumArt(assetsComp, imageItem);
-            $.writeln(" Album art replaced for job " + jobData.job_id);
+            retargetImageLayersToFootage(assetsComp, "COVER");
+            $.writeln(" Album art retargeted to COVER for job " + jobData.job_id);
         } catch (e) {
             $.writeln(" Assets " + jobData.job_id + " not found — skipping album art.");
         }
+
 
         // Add to render queue
         try {
@@ -170,50 +160,6 @@ function toAbsolute(p) {
     }
     return f.fsName.replace(/\\/g, "/");
 }
-
-function replaceLayer(comp, name, newItem) {
-    for (var i = 1; i <= comp.numLayers; i++) {
-        var lyr = comp.layer(i);
-        if (lyr.name === name) {
-            try {
-                // Store existing transform settings
-                var pos = lyr.property("Transform")("Position").value;
-                var scale = lyr.property("Transform")("Scale").value;
-                var rot = lyr.property("Transform")("Rotation").value;
-                var anchor = lyr.property("Transform")("Anchor Point").value;
-                var parent = lyr.parent;
-
-                // Replace source but keep transforms
-                lyr.replaceSource(newItem, false);
-
-                // Restore transform settings
-                lyr.property("Transform")("Position").setValue(pos);
-                lyr.property("Transform")("Scale").setValue(scale);
-                lyr.property("Transform")("Rotation").setValue(rot);
-                lyr.property("Transform")("Anchor Point").setValue(anchor);
-                lyr.parent = parent;
-
-                // Optional: auto-fit if it’s an image and size differs
-                if (newItem.width && newItem.height && lyr.sourceRectAtTime) {
-                    var rect = lyr.sourceRectAtTime(0, false);
-                    var scaleX = (comp.width / rect.width) * 100;
-                    var scaleY = (comp.height / rect.height) * 100;
-                    var uniform = Math.min(scaleX, scaleY);
-                    // comment this line out if you want *no auto-scaling*
-                    // lyr.property("Transform")("Scale").setValue([uniform, uniform]);
-                }
-
-                $.writeln("Replaced layer '" + name + "' with " + newItem.name);
-                return;
-            } catch (err) {
-                $.writeln(" Error replacing layer '" + name + "': " + err.toString());
-                return;
-            }
-        }
-    }
-    $.writeln(" Layer not found: " + name + " in comp " + comp.name);
-}
-
 
 function applyColorsToBackground(jobId, colors) {
     if (!colors || !colors.length) return;
@@ -341,7 +287,6 @@ function applyColorsWherePresent(comp, colors) {
         var fx = null;
         try { fx = lyr.property("Effects")("4-Color Gradient"); } catch (_) {}
         if (!fx) {
-            // also handle "4 Color Gradient" (some AE versions differ)
             try { fx = lyr.property("Effects")("4 Color Gradient"); } catch (_) {}
         }
         if (!fx) continue;
@@ -395,20 +340,45 @@ function parseLyricsFile(p) {
     var raw = readTextFile(p);
     var data = JSON.parse(raw);
     var linesArray = [], tAndText = [];
+
     for (var i = 0; i < data.length; i++) {
         var cur = String(data[i].lyric_current || data[i].cur || "");
-        linesArray.push(cur);
-        tAndText.push({ t: Number(data[i].t || 0), cur: cur });
+        var t = Number(data[i].t || 0);
+
+        // Split long lines automatically
+        var splitLines = splitLongLines(cur, 25);
+        for (var j = 0; j < splitLines.length; j++) {
+            linesArray.push(splitLines[j]);
+            tAndText.push({ t: t, cur: splitLines[j] });
+        }
     }
+
     return { linesArray: linesArray, tAndText: tAndText };
 }
 
+function wrapTwoLines(s, limit) {
+    // make sure any literal "\\r" becomes a real carriage return first
+    s = String(s).replace(/\\r/g, "\r");
+
+    if (s.length <= limit) return s;
+
+    // split at the last space before limit
+    var cut = s.lastIndexOf(" ", limit);
+    if (cut < 0) cut = limit; // no space found, hard cut
+    return s.substring(0, cut) + "\r" + s.substring(cut + 1).replace(/^\s+/, "");
+}
+
+
 function replaceLyricArrayInLayer(layer, linesArray) {
+    var MAX = 25; // visual wrap threshold
+
     var lines = [];
     for (var i = 0; i < linesArray.length; i++) {
-        var l = String(linesArray[i]).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        var l = wrapTwoLines(linesArray[i], MAX);
+        l = String(l).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
         lines.push('"' + l + '"');
     }
+
     var newBlock = "var lyrics = [\n" + lines.join(",\n") + "\n];";
     var prop = layer.property("Source Text");
     if (!prop) return;
@@ -416,6 +386,7 @@ function replaceLyricArrayInLayer(layer, linesArray) {
     var re = /var\s+lyrics\s*=\s*\[[\s\S]*?\];/;
     prop.expression = re.test(expr) ? expr.replace(re, newBlock) : newBlock + "\n" + expr;
 }
+
 
 function pushLyricsToCarousel(comp, arr) {
     var names = ["LYRIC PREVIOUS", "LYRIC CURRENT", "LYRIC NEXT 1", "LYRIC NEXT 2"];
@@ -431,34 +402,46 @@ function clearAllMarkers(layer) {
     for (var i = mk.numKeys; i >= 1; i--) mk.removeKey(i);
 }
 
-function setAudioMarkersFromTArray(comp, arr) {
-    var audio = comp.layer("AUDIO");
-    if (!audio) return;
-    var mk = audio.property("Marker");
-    if (!mk) return;
-    clearAllMarkers(audio);
-    var lastT = 0;
-    for (var i = 0; i < arr.length; i++) {
-        var mv = new MarkerValue(arr[i].cur || "LYRIC_" + (i + 1));
-        mk.setValueAtTime(arr[i].t, mv);
-        if (arr[i].t > lastT) lastT = arr[i].t;
-    }
-    if (lastT + 2 > comp.duration) comp.duration = lastT + 2;
-}
+function ensureAudioLayer(comp) {
+    var lyr = comp.layer("AUDIO");
+    if (lyr) return lyr;
 
-function replaceAlbumArt(assetComp, newImage) {
-    if (!assetComp) return;
-    for (var i = 1; i <= assetComp.numLayers; i++) {
-        var lyr = assetComp.layer(i);
-        if (lyr && lyr.source && (lyr.source instanceof FootageItem)) {
-            var n = (lyr.source.name || "").toLowerCase();
-            if (n.indexOf(".jpg") !== -1 || n.indexOf(".png") !== -1) {
-                lyr.replaceSource(newImage, false);
-                return;
-            }
+    // Fallback: find the first AVLayer that has audio enabled
+    for (var i = 1; i <= comp.numLayers; i++) {
+        var L = comp.layer(i);
+        if (L instanceof AVLayer && L.hasAudio) {
+            // rename it so expressions looking for "AUDIO" keep working
+            try { L.name = "AUDIO"; } catch (_) {}
+            return L;
         }
     }
+    return null;
 }
+
+function setAudioMarkersFromTArray(lyricComp, tAndText) {
+    var audio = ensureAudioLayer(lyricComp);
+    if (!audio) { $.writeln("⚠️ No AUDIO layer found in " + lyricComp.name); return; }
+
+    var mk = audio.property("Marker");
+    if (!mk) { $.writeln("⚠️ No Marker prop on AUDIO in " + lyricComp.name); return; }
+
+    // Clear markers
+    for (var i = mk.numKeys; i >= 1; i--) mk.removeKey(i);
+
+    var lastT = 0;
+    for (var k = 0; k < tAndText.length; k++) {
+        var t = Number(tAndText[k].t) || 0;
+        var name = String(tAndText[k].cur || ("LYRIC_" + (k + 1)));
+        try {
+            mk.setValueAtTime(t, new MarkerValue(name));
+            if (t > lastT) lastT = t;
+        } catch (e) {
+            $.writeln("⚠️ Marker set failed at " + t + "s: " + e.toString());
+        }
+    }
+    if (lastT + 2 > lyricComp.duration) lyricComp.duration = lastT + 2;
+}
+
 
 function addToRenderQueue(comp, jobFolder, jobId) {
     var root = new Folder(jobFolder).parent;
@@ -473,6 +456,97 @@ function addToRenderQueue(comp, jobFolder, jobId) {
     rq.outputModule(1).file = outFile;
     return outPath;
 }
+
+function splitLongLines(line, maxLen) {
+    if (!line || typeof line !== "string") return [];
+    var words = line.split(" ");
+    var lines = [];
+    var buffer = ""; // renamed from 'current' to avoid global shadowing issues
+
+    for (var i = 0; i < words.length; i++) {
+        var w = String(words[i]);
+        if ((buffer + w).length > maxLen) {
+            lines.push(buffer.replace(/^\s+|\s+$/g, "")); // manual trim
+            buffer = w + " ";
+        } else {
+            buffer += w + " ";
+        }
+    }
+
+    if (buffer.replace(/^\s+|\s+$/g, "").length > 0) {
+        lines.push(buffer.replace(/^\s+|\s+$/g, ""));
+    }
+
+    return lines;
+}
+
+function replaceInAllComps(compName, layerName, newItem) {
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var it = app.project.item(i);
+        if (it instanceof CompItem && it.name.indexOf(compName) !== -1) {
+            for (var j = 1; j <= it.numLayers; j++) {
+                var lyr = it.layer(j);
+                if (lyr.name === layerName && lyr.source) {
+                    lyr.replaceSource(newItem, false);
+                }
+            }
+        }
+    }
+}
+// Relink a Project FootageItem by its *project-panel name* (keeps name & all uses)
+function relinkFootageByName(itemName, newFilePath) {
+    var newFile = new File(newFilePath);
+    if (!newFile.exists) {
+        $.writeln("⚠️ File not found: " + newFilePath);
+        return;
+    }
+    var found = false;
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var it = app.project.item(i);
+        if (it instanceof FootageItem && it.name.toUpperCase() === itemName.toUpperCase()) {
+            try {
+                it.replace(newFile);     // relink only, name stays the same
+                found = true;
+                $.writeln("🔗 Relinked '" + it.name + "' to " + newFile.fsName);
+            } catch (e) {
+                $.writeln("⚠️ Could not relink '" + it.name + "': " + e.toString());
+            }
+        }
+    }
+    if (!found) $.writeln("⚠️ Footage named '" + itemName + "' not found in Project.");
+}
+
+// If your Assets comp uses some other PNG/JPG layers, point them to the COVER footage item.
+function retargetImageLayersToFootage(assetComp, footageName) {
+    if (!assetComp) return;
+    var coverFootage = null;
+    for (var i = 1; i <= app.project.numItems; i++) {
+        var it = app.project.item(i);
+        if (it instanceof FootageItem && it.name.toUpperCase() === footageName.toUpperCase()) {
+            coverFootage = it; break;
+        }
+    }
+    if (!coverFootage) { $.writeln("⚠️ Footage '" + footageName + "' not found."); return; }
+
+    for (var L = 1; L <= assetComp.numLayers; L++) {
+        var lyr = assetComp.layer(L);
+        if (lyr instanceof AVLayer && lyr.source instanceof FootageItem) {
+            var n = (lyr.source.name || "").toLowerCase();
+            // only retarget obvious raster assets (png/jpg/jpeg)
+            if (/\.(png|jpg|jpeg)$/i.test(n)) {
+                try {
+                    lyr.replaceSource(coverFootage, false); // keep layer props, use COVER footage
+                    $.writeln("🎯 Retargeted '" + lyr.name + "' to COVER footage in " + assetComp.name);
+                } catch (e) {
+                    $.writeln("⚠️ Could not retarget '" + lyr.name + "': " + e.toString());
+                }
+            }
+        }
+    }
+}
+
+
+
 
 // -----------------------------
 main();

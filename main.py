@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 def download_audio(url,job_folder):
     output_path = os.path.join(job_folder, 'audio_source.%(ext)s')
-
+ 
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': output_path,
@@ -96,27 +96,74 @@ def transcribe_audio(job_folder):
 
     audio_path = os.path.join(job_folder, "audio_trimmed.wav")
     model = whisper.load_model("small")  # options: tiny, base, small, medium, large
-    result = model.transcribe(audio_path)
+    result = model.transcribe(audio_path, word_timestamps=True,verbose=False)
 
-    # Build lyrics data structure compatible with AE JSON
+    def pack_blocks_from_words(words, max_line=25):
+        blocks = []
+        i = 0
+        while i < len(words):
+            # Start a new block
+            block_start = float(words[i]['start'])
+            line1, line2 = "", ""
+            # fill line1
+            while i < len(words):
+                w = words[i]['word']
+                candidate = (line1 + (" " if line1 else "") + w).strip()
+                if len(candidate) > max_line:
+                    break
+                line1 = candidate
+                i += 1
+            # fill line2
+            while i < len(words):
+                w = words[i]['word']
+                candidate = (line2 + (" " if line2 else "") + w).strip()
+                if len(candidate) > max_line:
+                    break
+                line2 = candidate
+                i += 1
+            text = line1 if not line2 else (line1 + "\\r" + line2)
+            blocks.append({"t": block_start, "text": text})
+        return blocks
+
+
+
     final_list = []
     segments = result["segments"]
 
-    for i, seg in enumerate(segments):
-        t = float(seg["start"])  # seconds
-        cur = seg["text"].strip()
+    def chunk_text(s, limit=25):
+        words, out, buf = s.split(), [], ""
+        for w in words:
+            if len((buf + " " + w).strip()) > limit:
+                if buf:
+                    out.append(buf.strip())
+                buf = w
+            else:
+                buf = (buf + " " + w).strip()
+        if buf:
+            out.append(buf.strip())
+        return out
 
-        prev = segments[i-1]["text"].strip() if i > 0 else ""
-        next1 = segments[i+1]["text"].strip() if i+1 < len(segments) else ""
-        next2 = segments[i+2]["text"].strip() if i+2 < len(segments) else ""
+    for seg in segments:
+        t0 = float(seg["start"])
+        t1 = float(seg.get("end", t0 + 0.5))
+        text = seg["text"].strip()
 
-        final_list.append({
-            "t": t,
-            "lyric_prev": prev,
-            "lyric_current": cur,
-            "lyric_next1": next1,
-            "lyric_next2": next2,
-        })
+        chunks = chunk_text(text, limit=25)
+        n = max(1, len(chunks))
+        dur = max(0.01, t1 - t0)
+        step = dur / n
+
+        for k, chunk in enumerate(chunks):
+            t = t0 + k * step
+            final_list.append({
+                "t": t,
+                "lyric_prev": "",
+                "lyric_current": chunk,
+                "lyric_next1": "",
+                "lyric_next2": ""
+            })
+
+
 
     # Save lyrics JSON file
     lyrics_path = os.path.join(job_folder, "lyrics.txt")
@@ -145,13 +192,15 @@ def batch_generate_jobs():
         start_time = input(f"[Job {job_id}] Enter start time (MM:SS): ")
         end_time = input(f"[Job {job_id}] Enter end time (MM:SS): ")
         clipped_path = trimming_audio(job_folder, start_time, end_time)
-
+        
+        lyrics_path = transcribe_audio(job_folder)
+        
         imgurl = input(f"[Job {job_id}] Enter IMAGE URL: ")
         image_path = image_download(job_folder, imgurl)
 
         colors = image_extraction(job_folder)
 
-        lyrics_path = transcribe_audio(job_folder)
+        
 
         job_data = {
             "job_id": job_id,
