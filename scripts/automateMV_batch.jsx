@@ -95,6 +95,7 @@ function main() {
 
         autoResizeCoverInOutput(jobData.job_id);
         setWorkAreaToAudioDuration(jobData.job_id);
+        setOutputWorkAreaToAudio(jobData.job_id, jobData.audio_trimmed);
         updateSongTitle(jobData.job_id, jobData.song_title);
 
 
@@ -704,6 +705,26 @@ function relinkFootageInsideOutputFolder(jobId, audioPath, coverPath) {
     }
 }
 
+function setOutputWorkAreaToAudio(jobId, audioPath) {
+    try {
+        var comp = findCompByName("OUTPUT " + jobId);
+        if (!comp) return;
+
+        var audioFile = new File(audioPath);
+        var temp = app.project.importFile(new ImportOptions(audioFile));
+        var duration = temp.duration;
+        temp.remove();
+
+        if (duration && duration > 0) {
+            comp.workAreaStart = 0;
+            comp.workAreaDuration = duration;
+            comp.duration = duration;
+            $.writeln("⏱ Set work area for OUTPUT " + jobId + " to " + duration.toFixed(2) + "s");
+        }
+    } catch (e) {
+        $.writeln(" Could not set OUTPUT work area for job " + jobId + ": " + e.toString());
+    }
+}
 
 
 
