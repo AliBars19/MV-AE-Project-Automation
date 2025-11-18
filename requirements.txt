@@ -7,3 +7,4 @@ Required Libraries
 - colorthief
 - matplotlib
 - openai-whisper
+- librosa
