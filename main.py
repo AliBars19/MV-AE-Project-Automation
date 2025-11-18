@@ -12,6 +12,8 @@ from io import BytesIO
 from colorthief import ColorThief #For image colour extraction
 import matplotlib.pyplot as plt
 
+import librosa
+
 #------------------------------------------ JOB PROGRESS CHECKER
 def check_job_progress(job_folder):
 
@@ -21,6 +23,7 @@ def check_job_progress(job_folder):
         "lyrics_transcribed": os.path.exists(os.path.join(job_folder, "lyrics.txt")),
         "image_downloaded": os.path.exists(os.path.join(job_folder, "cover.png")),
         "job_json": os.path.exists(os.path.join(job_folder, "job_data.json")),
+        "beats_generated": os.path.exists(os.path.join(job_folder, "beats.json"))
     }
 
     # If job_data.json exists, read it to reuse info
@@ -197,6 +200,22 @@ def transcribe_audio(job_folder):
     return lyrics_path
 
 
+def detect_beats(job_folder):
+
+    audio_path = os.path.join(job_folder, "audio_trimmed.wav")
+    
+    y, sr = librosa.load(audio_path, sr=None)
+
+    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+    beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+    
+    beats_list = [float(t) for t in beat_times]
+    print(f"  Detected {len(beats_list)} beats (tempo ≈ {tempo:.1f} BPM).")
+
+    return beats_list
+
+
+
 
 
 #-------------------------MAIN----------------------------------------
@@ -232,6 +251,20 @@ def batch_generate_jobs():
             clipped_path = os.path.join(job_folder, "audio_trimmed.wav")
             print(f"✓ Audio already trimmed for job {job_id:03}")
 
+
+
+        beats_path = os.path.join(job_folder, "beats.json")
+        if not stages["beats_generated"]:
+            beats = detect_beats(job_folder)
+            with open(beats_path, "w", encoding="utf-8") as f:
+                json.dump(beats, f, indent=4)
+        else:
+            with open(beats_path, "r", encoding="utf-8") as f:
+                beats = json.load(f)
+            print(f"✓ Beats already detected for job {job_id:03}")
+
+        
+
         #Lyrics
         if not stages["lyrics_transcribed"]:
             lyrics_path = transcribe_audio(job_folder)
@@ -263,6 +296,7 @@ def batch_generate_jobs():
             "colors": colors,
             "lyrics_file": lyrics_path.replace("\\", "/"),
             "job_folder": job_folder.replace("\\", "/"),
+            "beats": beats,
             "song_title": song_title
         }
 
