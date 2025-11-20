@@ -746,8 +746,8 @@ function setOutputWorkAreaToAudio(jobId, audioPath) {
 
 
 function applyBeatSync(jobId, beatsArray) {
-    if (!beatsArray || !beatsArray.length) {
-        $.writeln(" No beats for job " + jobId);
+    if (!beatsArray || beatsArray.length < 2) {
+        $.writeln(" Not enough beats for job " + jobId);
         return;
     }
 
@@ -759,48 +759,65 @@ function applyBeatSync(jobId, beatsArray) {
 
     var layer = comp.layer("Spot Light 2");
     if (!layer) {
-        $.writeln(" 'Spot Light 2' not found in OUTPUT " + jobId);
+        $.writeln(" Spot Light 2 not found in OUTPUT " + jobId);
         return;
     }
 
-    // ---- Correct Intensity Property ----
+    // Get Light Intensity property
     var intensity =
         layer.property("ADBE Light Options Group") &&
         layer.property("ADBE Light Options Group").property("ADBE Light Intensity");
 
     if (!intensity)
-        intensity = layer.property("Light Options") && layer.property("Light Options").property("Intensity");
+        intensity = layer.property("Light Options") &&
+                    layer.property("Light Options").property("Intensity");
 
-    if (!intensity)
-        intensity = layer.property("Light Options").property(2); // Intensity is usually second parameter
+    if (!intensity && layer.property("Light Options"))
+        intensity = layer.property("Light Options").property(2);
 
     if (!intensity) {
-        $.writeln(" Spot Light 2: Intensity property not found");
+        $.writeln(" Intensity property not found");
         return;
     }
 
+    // Clear old keys
     for (var k = intensity.numKeys; k >= 1; k--) intensity.removeKey(k);
 
-    var peak = 75;
-    var base = 15;
+    var PEAK = 75;
+    var BASE = 15;
 
-    for (var i = 0; i < beatsArray.length; i++) {
+    // 1 frame in seconds
+    var oneFrame = 1 / comp.frameRate;
+
+    // Loop through beats
+    for (var i = 0; i < beatsArray.length - 1; i++) {
         var t = beatsArray[i];
-        var nextT = (i < beatsArray.length - 1) ? beatsArray[i + 1] : (t + 0.4);
-        var falloff = Math.max(0.05, nextT - t);
+        var nextT = beatsArray[i + 1];
 
-        intensity.setValueAtTime(t, peak);
-        intensity.setValueAtTime(t + falloff, base);
+        // --- PEAK at current beat ---
+        intensity.setValueAtTime(t, PEAK);
+        var kPeak = intensity.nearestKeyIndex(t);
+        intensity.setInterpolationTypeAtKey(kPeak, KeyframeInterpolationType.LINEAR);
 
-        var k1 = intensity.nearestKeyIndex(t);
-        var k2 = intensity.nearestKeyIndex(t + falloff);
-
-        intensity.setTemporalEaseAtKey(k1, [new KeyframeEase(0, 90)], [new KeyframeEase(0, 90)]);
-        intensity.setTemporalEaseAtKey(k2, [new KeyframeEase(0, 90)], [new KeyframeEase(0, 90)]);
+        // --- BASE one frame BEFORE next beat ---
+        var tBase = nextT - oneFrame;
+        if (tBase > t) {
+            intensity.setValueAtTime(tBase, BASE);
+            var kBase = intensity.nearestKeyIndex(tBase);
+            intensity.setInterpolationTypeAtKey(kBase, KeyframeInterpolationType.LINEAR);
+        }
     }
 
-    $.writeln(" Beat-sync keys applied: " + beatsArray.length);
+    // Add final peak on last beat
+    var lastBeat = beatsArray[beatsArray.length - 1];
+    intensity.setValueAtTime(lastBeat, PEAK);
+    var kFinal = intensity.nearestKeyIndex(lastBeat);
+    intensity.setInterpolationTypeAtKey(kFinal, KeyframeInterpolationType.LINEAR);
+
+    $.writeln(" Beat sync applied with frame-gap falloff.");
 }
+
+
 
 
 
