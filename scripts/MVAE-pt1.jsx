@@ -763,7 +763,7 @@ function applyBeatSync(jobId, beatsArray) {
         return;
     }
 
-    // Get Light Intensity property
+
     var intensity =
         layer.property("ADBE Light Options Group") &&
         layer.property("ADBE Light Options Group").property("ADBE Light Intensity");
@@ -780,26 +780,26 @@ function applyBeatSync(jobId, beatsArray) {
         return;
     }
 
-    // Clear old keys
+ 
     for (var k = intensity.numKeys; k >= 1; k--) intensity.removeKey(k);
 
     var PEAK = 75;
     var BASE = 15;
 
-    // 1 frame in seconds
+
     var oneFrame = 1 / comp.frameRate;
 
-    // Loop through beats
+
     for (var i = 0; i < beatsArray.length - 1; i++) {
         var t = beatsArray[i];
         var nextT = beatsArray[i + 1];
 
-        // --- PEAK at current beat ---
+
         intensity.setValueAtTime(t, PEAK);
         var kPeak = intensity.nearestKeyIndex(t);
         intensity.setInterpolationTypeAtKey(kPeak, KeyframeInterpolationType.LINEAR);
 
-        // --- BASE one frame BEFORE next beat ---
+
         var tBase = nextT - oneFrame;
         if (tBase > t) {
             intensity.setValueAtTime(tBase, BASE);
@@ -808,7 +808,7 @@ function applyBeatSync(jobId, beatsArray) {
         }
     }
 
-    // Add final peak on last beat
+
     var lastBeat = beatsArray[beatsArray.length - 1];
     intensity.setValueAtTime(lastBeat, PEAK);
     var kFinal = intensity.nearestKeyIndex(lastBeat);

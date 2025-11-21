@@ -220,13 +220,18 @@ def fetch_genius_lyrics(song_title):
         if not line:
             continue
 
+        low = line.lower()
+
         if line.startswith("[") and line.endswith("]"):
             continue
 
-        if re.match(r"^\d+\s+ContributorsTranslations$", line):
+        if "contributorstranslations" in low:
+            continue
+        if re.match(r"^\d+\s+contributorstranslations$", low):
             continue
 
         lines.append(line)
+
 
     if not lines:
         print("  [Genius] Lyrics empty — fallback to AZLyrics.")
@@ -279,98 +284,89 @@ def fetch_azlyrics(song_title):
 
 
 def map_genius_onto_whisper(final_list, genius_text, max_len=25):
-    
-
-    if not genius_text or not final_list:
+    """
+    Keep Whisper timing & segmentation.
+    For each Whisper 'lyric_current', find the best-matching window in the
+    Genius lyrics (by word overlap). If similarity is high enough, replace
+    the text with the Genius window (wording fix). Otherwise leave Whisper
+    text untouched.
+    """
+    if not final_list or not genius_text:
         return final_list
 
-    raw_lines = []
-    for line in genius_text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-
-        low = line.lower()
-        if line.startswith("[") and line.endswith("]"):
-            continue
-        if "contributors" in low or "translation" in low:
-            continue
-        if low.isdigit():
-            continue
-
-        raw_lines.append(line)
-
-    if not raw_lines:
-        return final_list
-
-   
-    def normalize(s: str) -> str:
-        s = s.lower()
-        s = re.sub(r"[^a-z0-9\s']", " ", s)  # keep basic chars
-        s = re.sub(r"\s+", " ", s).strip()
-        return s
-
-    whisper_text = normalize(" ".join(e.get("lyric_current", "") for e in final_list))
-
-  
-    best_idx = 0
-    best_score = 0
-
-    for i in range(len(raw_lines)):
-      
-        window = " ".join(raw_lines[i:i+4])
-        norm_window = normalize(window)
-        if not norm_window:
-            continue
-       
-        score = 0
-        for w in set(norm_window.split()):
-            if len(w) < 3:   
-                continue
-            if w in whisper_text:
-                score += 1
-
-        if score > best_score:
-            best_score = score
-            best_idx = i
-
-    
-    start_lines = raw_lines[best_idx:] if best_score > 0 else raw_lines
-
-    
-    genius_words = []
-    for line in start_lines:
-        genius_words.extend(line.split())
-
+    # Build one flat word list from Genius
+    genius_words = _norm_words(genius_text)
     if not genius_words:
         return final_list
 
-    
-    idx = 0
-    n_words = len(genius_words)
+    g_n = len(genius_words)
+    if g_n == 0:
+        return final_list
 
-    for entry in final_list:
-        if idx >= n_words:
-            break
-
-        buf = ""
-        while idx < n_words:
-            w = genius_words[idx]
-            candidate = (buf + " " + w).strip()
-            if len(candidate) > max_len:
+    def window_score(start_idx, target_words):
+        """fraction of words that match exactly in this window"""
+        same = 0
+        L = len(target_words)
+        for k in range(L):
+            gi = start_idx + k
+            if gi >= g_n:
                 break
-            buf = candidate
-            idx += 1
+            if genius_words[gi] == target_words[k]:
+                same += 1
+        return float(same) / max(1, L)
 
-        if buf:
-            entry["lyric_current"] = buf
+    # For each Whisper chunk…
+    for entry in final_list:
+        phrase = (entry.get("lyric_current") or "").strip()
+        if not phrase:
+            continue
+
+        target_words = _norm_words(phrase)
+        if not target_words:
+            continue
+
+        L = len(target_words)
+        if L == 0 or L > g_n:
+            continue
+
+        best_score = 0.0
+        best_start = None
+
+        # Slide a window of the same word length over Genius lyrics
+        for start in range(0, g_n - L + 1):
+            s = window_score(start, target_words)
+            if s > best_score:
+                best_score = s
+                best_start = start
+
+        # Only trust very similar matches
+        if best_start is not None and best_score >= 0.6:  # tweak threshold if needed
+            candidate_words = genius_words[best_start:best_start + L]
+            corrected = " ".join(candidate_words)
+
+            # Enforce char limit so AE layout stays sane
+            if len(corrected) > max_len:
+                corrected = corrected[:max_len].rstrip()
+
+            entry["lyric_current"] = corrected
 
     return final_list
 
 
 
+
 #-------------------------------------- Taking in lyrics & Transcribe
 import whisper
+
+def _norm_words(text):
+    
+    words = []
+    for raw in text.split():
+        w = re.sub(r"[^a-z0-9']+", "", raw.lower())
+        if w:
+            words.append(w)
+    return words
+
 
 def transcribe_audio(job_folder, song_title=None):
     print("\n Transcribing audio with Whisper...")
