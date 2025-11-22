@@ -280,78 +280,80 @@ def fetch_azlyrics(song_title):
     except Exception:
         return None
 
+from difflib import SequenceMatcher
 
+def align_genius_to_whisper(whisper_segments, genius_text, max_chars=25):
+    
+    if not whisper_segments or not genius_text:
+        return whisper_segments
 
-
-def map_genius_onto_whisper(final_list, genius_text, max_len=25):
-    """
-    Keep Whisper timing & segmentation.
-    For each Whisper 'lyric_current', find the best-matching window in the
-    Genius lyrics (by word overlap). If similarity is high enough, replace
-    the text with the Genius window (wording fix). Otherwise leave Whisper
-    text untouched.
-    """
-    if not final_list or not genius_text:
-        return final_list
-
-    # Build one flat word list from Genius
+    # Flatten Genius into normalized word list
     genius_words = _norm_words(genius_text)
     if not genius_words:
-        return final_list
+        return whisper_segments
+
+    # ---- Build an "anchor" phrase from the first few Whisper chunks ----
+    anchor_segments = []
+    for seg in whisper_segments:
+        phrase = (seg.get("lyric_current") or "").strip()
+        if phrase:
+            anchor_segments.append(phrase)
+        if len(anchor_segments) >= 3:  # first 2–3 lines are enough to locate the section
+            break
+
+    if not anchor_segments:
+        return whisper_segments
+
+    anchor_words = _norm_words(" ".join(anchor_segments))
+    if not anchor_words:
+        return whisper_segments
 
     g_n = len(genius_words)
-    if g_n == 0:
-        return final_list
+    a_n = len(anchor_words)
+    if a_n > g_n:
+        return whisper_segments
 
-    def window_score(start_idx, target_words):
-        """fraction of words that match exactly in this window"""
-        same = 0
-        L = len(target_words)
-        for k in range(L):
-            gi = start_idx + k
-            if gi >= g_n:
-                break
-            if genius_words[gi] == target_words[k]:
-                same += 1
-        return float(same) / max(1, L)
+    anchor_str = " ".join(anchor_words)
 
-    # For each Whisper chunk…
-    for entry in final_list:
-        phrase = (entry.get("lyric_current") or "").strip()
-        if not phrase:
-            continue
+    # ---- Slide a window over Genius and find the best match to our anchor ----
+    best_start = 0
+    best_ratio = 0.0
+    for start in range(0, g_n - a_n + 1):
+        window_str = " ".join(genius_words[start:start + a_n])
+        r = SequenceMatcher(None, anchor_str, window_str).ratio()
+        if r > best_ratio:
+            best_ratio = r
+            best_start = start
 
-        target_words = _norm_words(phrase)
-        if not target_words:
-            continue
+    print(f"  [Align] Best anchor match ratio = {best_ratio:.3f} at word index {best_start}")
 
-        L = len(target_words)
-        if L == 0 or L > g_n:
-            continue
+    # If we can't confidently locate this snippet in the full lyrics, keep Whisper as-is
+    if best_ratio < 0.4:
+        print("  [Align] Match too weak, keeping Whisper text.")
+        return whisper_segments
 
-        best_score = 0.0
-        best_start = None
+    # ---- Now stream Genius words from that starting index, using Whisper's chunk sizes ----
+    g_index = best_start
+    g_total = g_n
 
-        # Slide a window of the same word length over Genius lyrics
-        for start in range(0, g_n - L + 1):
-            s = window_score(start, target_words)
-            if s > best_score:
-                best_score = s
-                best_start = start
+    for seg in whisper_segments:
+        phrase = (seg.get("lyric_current") or "").strip()
 
-        # Only trust very similar matches
-        if best_start is not None and best_score >= 0.6:  # tweak threshold if needed
-            candidate_words = genius_words[best_start:best_start + L]
-            corrected = " ".join(candidate_words)
+        # How many words should this chunk get? Use Whisper's word count as a guide.
+        w_words = _norm_words(phrase)
+        w_len = len(w_words) or 3  # minimum so we don't produce empty chunks
 
-            # Enforce char limit so AE layout stays sane
-            if len(corrected) > max_len:
-                corrected = corrected[:max_len].rstrip()
+        end_index = min(g_index + w_len, g_total)
+        new_words = genius_words[g_index:end_index]
 
-            entry["lyric_current"] = corrected
+        if new_words:
+            corrected = " ".join(new_words)
+            corrected = wrap_two_lines(corrected, max_chars=max_chars)
+            seg["lyric_current"] = corrected
+            g_index = end_index
+        # else: no more Genius words; keep whatever Whisper had
 
-    return final_list
-
+    return whisper_segments
 
 
 
@@ -366,6 +368,27 @@ def _norm_words(text):
         if w:
             words.append(w)
     return words
+
+def wrap_two_lines(text, max_chars=25):
+   
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+
+    cut = text.rfind(" ", 0, max_chars)
+    if cut == -1:
+        cut = max_chars
+    first = text[:cut].rstrip()
+    rest = text[cut:].lstrip()
+
+    if not rest:
+        return first
+
+    if len(rest) > max_chars:
+        rest = rest[:max_chars].rstrip()
+
+    return first + "\\r" + rest
+
 
 
 def transcribe_audio(job_folder, song_title=None):
@@ -421,7 +444,7 @@ def transcribe_audio(job_folder, song_title=None):
                 gf.write(genius_text)
             print(" Genius lyrics saved to", genius_path)
     
-            final_list = map_genius_onto_whisper(final_list, genius_text, max_len=25)
+            final_list = align_genius_to_whisper(final_list, genius_text, max_chars=25)
         else:
             print(" Genius failed — keeping Whisper lyrics")
 
