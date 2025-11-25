@@ -284,6 +284,7 @@ from difflib import SequenceMatcher
 
 def align_genius_to_whisper(whisper_segments, genius_text, max_chars=25):
     
+
     if not whisper_segments or not genius_text:
         return whisper_segments
 
@@ -292,13 +293,15 @@ def align_genius_to_whisper(whisper_segments, genius_text, max_chars=25):
     if not genius_words:
         return whisper_segments
 
-    # ---- Build an "anchor" phrase from the first few Whisper chunks ----
+    g_n = len(genius_words)
+
+    # ---- Build anchor from the first few Whisper chunks ----
     anchor_segments = []
     for seg in whisper_segments:
         phrase = (seg.get("lyric_current") or "").strip()
         if phrase:
             anchor_segments.append(phrase)
-        if len(anchor_segments) >= 3:  # first 2–3 lines are enough to locate the section
+        if len(anchor_segments) >= 3:  # 2–3 chunks is enough
             break
 
     if not anchor_segments:
@@ -308,14 +311,12 @@ def align_genius_to_whisper(whisper_segments, genius_text, max_chars=25):
     if not anchor_words:
         return whisper_segments
 
-    g_n = len(genius_words)
     a_n = len(anchor_words)
     if a_n > g_n:
         return whisper_segments
 
     anchor_str = " ".join(anchor_words)
 
-    # ---- Slide a window over Genius and find the best match to our anchor ----
     best_start = 0
     best_ratio = 0.0
     for start in range(0, g_n - a_n + 1):
@@ -327,33 +328,33 @@ def align_genius_to_whisper(whisper_segments, genius_text, max_chars=25):
 
     print(f"  [Align] Best anchor match ratio = {best_ratio:.3f} at word index {best_start}")
 
-    # If we can't confidently locate this snippet in the full lyrics, keep Whisper as-is
     if best_ratio < 0.4:
         print("  [Align] Match too weak, keeping Whisper text.")
         return whisper_segments
 
-    # ---- Now stream Genius words from that starting index, using Whisper's chunk sizes ----
     g_index = best_start
     g_total = g_n
 
     for seg in whisper_segments:
         phrase = (seg.get("lyric_current") or "").strip()
 
-        # How many words should this chunk get? Use Whisper's word count as a guide.
         w_words = _norm_words(phrase)
-        w_len = len(w_words) or 3  # minimum so we don't produce empty chunks
+        w_len = len(w_words) or 3  
+
+        if g_index >= g_total:
+            continue
 
         end_index = min(g_index + w_len, g_total)
         new_words = genius_words[g_index:end_index]
 
         if new_words:
-            corrected = " ".join(new_words)
+            corrected = " ".join(new_words).strip()
             corrected = wrap_two_lines(corrected, max_chars=max_chars)
             seg["lyric_current"] = corrected
             g_index = end_index
-        # else: no more Genius words; keep whatever Whisper had
 
     return whisper_segments
+
 
 
 
@@ -369,34 +370,36 @@ def _norm_words(text):
             words.append(w)
     return words
 
+
 def wrap_two_lines(text, max_chars=25):
-   
     text = text.strip()
+
     if len(text) <= max_chars:
         return text
 
     cut = text.rfind(" ", 0, max_chars)
     if cut == -1:
         cut = max_chars
+
     first = text[:cut].rstrip()
-    rest = text[cut:].lstrip()
+    rest  = text[cut:].lstrip()
 
-    if not rest:
-        return first
-
-    if len(rest) > max_chars:
-        rest = rest[:max_chars].rstrip()
-
-    return first + "\\r" + rest
+    return first + "\\n" + rest
 
 
+
+
+
+import whisper
 
 def transcribe_audio(job_folder, song_title=None):
     print("\n Transcribing audio with Whisper...")
 
     audio_path = os.path.join(job_folder, "audio_trimmed.wav")
-    model = whisper.load_model("small")  # options: tiny, base, small, medium, large
-    result = model.transcribe(audio_path, word_timestamps=True,verbose=False)
+
+    model = whisper.load_model("large")
+
+    result = model.transcribe(audio_path, word_timestamps=True, verbose=False)
 
     final_list = []
     segments = result["segments"]
@@ -404,16 +407,18 @@ def transcribe_audio(job_folder, song_title=None):
     def chunk_text(s, limit=25):
         words, out, buf = s.split(), [], ""
         for w in words:
-            if len((buf + " " + w).strip()) > limit:
+            candidate = (buf + " " + w)
+            if len(candidate) > limit:
                 if buf:
                     out.append(buf.strip())
                 buf = w
             else:
-                buf = (buf + " " + w).strip()
+                buf = candidate.rstrip()
         if buf:
             out.append(buf.strip())
         return out
 
+    # 1) Build Whisper-based timing grid
     for seg in segments:
         t0 = float(seg["start"])
         t1 = float(seg.get("end", t0 + 0.5))
@@ -434,28 +439,32 @@ def transcribe_audio(job_folder, song_title=None):
                 "lyric_next2": ""
             })
 
+    # 2) Pull lyrics from Genius and align them onto Whisper chunks
     if song_title and GENIUS_API_TOKEN:
         print(" Fetching Genius lyrics for:", song_title)
         genius_text = fetch_genius_lyrics(song_title)
-    
+
         if genius_text:
             genius_path = os.path.join(job_folder, "genius_lyrics.txt")
             with open(genius_path, "w", encoding="utf-8") as gf:
                 gf.write(genius_text)
             print(" Genius lyrics saved to", genius_path)
-    
+
             final_list = align_genius_to_whisper(final_list, genius_text, max_chars=25)
         else:
             print(" Genius failed — keeping Whisper lyrics")
 
-
-    # Save lyrics JSON file
+    # 3) Save JSON for AE
     lyrics_path = os.path.join(job_folder, "lyrics.txt")
     with open(lyrics_path, "w", encoding="utf-8") as f:
-        json.dump(final_list, f, indent=4, ensure_ascii=False)
+        text = json.dumps(final_list, indent=4, ensure_ascii=False)
+        text = text.replace("\\\\n", "\\n") 
+        f.write(text)
+
 
     print(f" Transcription complete: {len(final_list)} lines saved to {lyrics_path}")
     return lyrics_path
+
 
 
 def detect_beats(job_folder):

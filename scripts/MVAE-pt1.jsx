@@ -361,6 +361,14 @@ function readTextFile(p) {
 function parseLyricsFile(p) {
     var raw = readTextFile(p);
     var data = JSON.parse(raw);
+
+    for (var i = 0; i < data.length; i++) {
+        if (data[i].lyric_current) {
+            data[i].lyric_current =
+                data[i].lyric_current.split("\\n").join("\n");
+        }
+    }
+
     var linesArray = [], tAndText = [];
 
     for (var i = 0; i < data.length; i++) {
@@ -377,16 +385,24 @@ function parseLyricsFile(p) {
 
 
 function wrapTwoLines(s, limit) {
-    // make sure any literal "\\r" becomes a real carriage return first
-    s = String(s).replace(/\\r/g, "\r");
+    s = String(s);
+
+    if (s.indexOf("\n") !== -1) {
+        return s.replace(/\\n/g, "\n");
+    }
+
+    if (s.indexOf("\n") !== -1 || s.indexOf("\n") !== -1) {
+        return s;
+    }
 
     if (s.length <= limit) return s;
 
-    // split at the last space before limit
     var cut = s.lastIndexOf(" ", limit);
-    if (cut < 0) cut = limit; // no space found, hard cut
-    return s.substring(0, cut) + "\r" + s.substring(cut + 1).replace(/^\s+/, "");
+    if (cut < 0) cut = limit;
+
+    return s.substring(0, cut) + "\n" + s.substring(cut + 1).replace(/^\s+/, "");
 }
+
 
 
 function replaceLyricArrayInLayer(layer, linesArray) {
@@ -607,38 +623,19 @@ function retargetImageLayersToFootage(assetComp, footageName) {
 
 // Set comp work area to audio duration
 function setWorkAreaToAudioDuration(jobId) {
-    var comp = null;
-    try { comp = findCompByName("LYRIC FONT " + jobId); } catch (_) {}
+    var comp = findCompByName("LYRIC FONT " + jobId);
     if (!comp) return;
 
-    // Look for the AUDIO footage used in this job’s Assets folder
-    var outputFolder = findFolderByName("OUTPUT" + jobId);
-    if (!outputFolder) return;
+    var audio = ensureAudioLayer(comp);
+    if (!audio || !audio.source || !audio.source.duration) return;
 
-    var assetsFolder = null;
-    for (var i = 1; i <= outputFolder.numItems; i++) {
-        var it = outputFolder.item(i);
-        if (it instanceof FolderItem && it.name.toUpperCase().indexOf("ASSETS OT") === 0) {
-            assetsFolder = it; break;
-        }
-    }
-    if (!assetsFolder) return;
+    var dur = audio.source.duration;
 
-    var audioFootage = null;
-    for (var i = 1; i <= assetsFolder.numItems; i++) {
-        var it = assetsFolder.item(i);
-        if (it instanceof FootageItem && (it.name || "").toUpperCase() === "AUDIO") {
-            audioFootage = it; break;
-        }
-    }
-    if (!audioFootage || !audioFootage.duration) return;
-
-    var dur = audioFootage.duration;
     comp.workAreaStart = 0;
     comp.workAreaDuration = dur;
-    comp.duration = Math.max(comp.duration, dur);
-    $.writeln(" Set work area for LYRIC FONT " + jobId + " to " + dur.toFixed(2) + "s");
+    comp.duration = dur;
 }
+
 
 
 // Update title text inside Assets comp
@@ -664,7 +661,7 @@ function updateSongTitle(jobId, titleText) {
 
         var txtProp = targetTextLayer.property("Source Text");
         var doc = txtProp.value;       // TextDocument
-        doc.text = String(titleText);  // supports \r for line breaks if you ever pass them
+        doc.text = String(titleText); 
         txtProp.setValue(doc);
 
         $.writeln(" Set song title on layer '" + targetTextLayer.name +
@@ -723,25 +720,18 @@ function relinkFootageInsideOutputFolder(jobId, audioPath, coverPath) {
 }
 
 function setOutputWorkAreaToAudio(jobId, audioPath) {
-    try {
-        var comp = findCompByName("OUTPUT " + jobId);
-        if (!comp) return;
+    var comp = findCompByName("OUTPUT " + jobId);
+    if (!comp) return;
 
-        var audioFile = new File(audioPath);
-        var temp = app.project.importFile(new ImportOptions(audioFile));
-        var duration = temp.duration;
-        temp.remove();
+    var imported = app.project.importFile(new ImportOptions(new File(audioPath)));
+    var dur = imported.duration;
+    imported.remove();
 
-        if (duration && duration > 0) {
-            comp.workAreaStart = 0;
-            comp.workAreaDuration = duration;
-            comp.duration = duration;
-            $.writeln("⏱ Set work area for OUTPUT " + jobId + " to " + duration.toFixed(2) + "s");
-        }
-    } catch (e) {
-        $.writeln(" Could not set OUTPUT work area for job " + jobId + ": " + e.toString());
-    }
+    comp.duration = dur;
+    comp.workAreaStart = 0;
+    comp.workAreaDuration = dur;
 }
+
 
 
 
