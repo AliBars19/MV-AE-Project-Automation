@@ -630,10 +630,11 @@ function setWorkAreaToAudioDuration(jobId) {
     if (!audio || !audio.source || !audio.source.duration) return;
 
     var dur = audio.source.duration;
-
+    
+    comp.duration = dur;
     comp.workAreaStart = 0;
     comp.workAreaDuration = dur;
-    comp.duration = dur;
+    
 }
 
 
