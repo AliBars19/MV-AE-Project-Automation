@@ -1,0 +1,16 @@
+channels:
+  - "macbookvisuals"
+
+db_path : database/tiktok-sound.json
+
+genres : 
+  hip_hop: ["hip_hop","rap","trap","hip hop"]
+  alternative: ["alternative","alt"]
+  rock_music: ["rock_music","rock","metal","punk"]
+  pop: ["pop","electropop"]
+  electronic_dance_music: ["edm","electronic_dance_music","electronic","house","techno","dance"]
+  latin_music: ["latin","reggaeton","latina","urbano"]
+  k_pop: ["k-pop","kpop"]
+  rnb: ["r&b","soul","rnb"]
+
+  general: []
