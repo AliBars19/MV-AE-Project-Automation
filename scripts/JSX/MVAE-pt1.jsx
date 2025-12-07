@@ -175,13 +175,21 @@ function moveItemToFolder(item, folderName) {
 function toAbsolute(p) {
     if (!p) return p;
     p = p.replace(/\\/g, "/");
+
+    // First, try as-is (absolute path)
     var f = new File(p);
-    if (!f.exists) {
-        var base = File($.fileName).parent.parent;
-        f = new File(base.fsName + "/" + p);
+    if (f.exists) {
+        return f.fsName.replace(/\\/g, "/");
     }
+
+    // Fallback: treat as relative to project root
+    // scripts/JSX/your.jsx  → parent = JSX → parent = scripts → parent = project root
+    var base = File($.fileName).parent.parent.parent;
+    f = new File(base.fsName + "/" + p);
+
     return f.fsName.replace(/\\/g, "/");
 }
+
 
 function applyColorsToBackground(jobId, colors) {
     if (!colors || !colors.length) return;
@@ -403,26 +411,42 @@ function wrapTwoLines(s, limit) {
 
 
 function replaceLyricArrayInLayer(layer, linesArray) {
-    var MAX = 25; // visual wrap threshold
+    var MAX = 25;
 
     var lines = [];
     for (var i = 0; i < linesArray.length; i++) {
-        l = wrapTwoLines(linesArray[i], MAX);
-        // KEEP literal "\r" visible in the JS array
+        var l = wrapTwoLines(linesArray[i], MAX);
+
+        // keep literal \r so AE splits lines
         l = l.replace(/\r/g, "\\r");
 
-        // Escape backslashes and quotes
-        l = String(l).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        // escape quotes and backslashes
+        l = l.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
+        // push properly quoted JS string
+        lines.push('"' + l + '"');
     }
 
-    var newBlock = "var lyrics = [\n" + lines.join(",\n") + "\n];";
+    var newBlock =
+        "var lyrics = [\n    " +
+        lines.join(",\n    ") +
+        "\n];";
+
     var prop = layer.property("Source Text");
     if (!prop) return;
+
     var expr = prop.expression || "";
-    var re = /var\s+lyrics\s*=\s*\[[\s\S]*?\];/;
-    prop.expression = re.test(expr) ? expr.replace(re, newBlock) : newBlock + "\n" + expr;
+
+    // match ANY var lyrics = [ ... ];
+    var re = /var\s+lyrics\s*=\s*\[[\s\S]*?\];/i;
+
+    if (re.test(expr)) {
+        prop.expression = expr.replace(re, newBlock);
+    } else {
+        prop.expression = newBlock + "\n" + expr;
+    }
 }
+
 
 
 function pushLyricsToCarousel(comp, arr) {

@@ -1,36 +1,71 @@
 [
     {
-        "t": 0.0,
+        "t": 0.3,
         "lyric_prev": "",
-        "lyric_current": "She's high (High) She \\r lives in the sky",
+        "lyric_current": "Yeah, yeah",
         "lyric_next1": "",
         "lyric_next2": ""
     },
     {
-        "t": 5.04,
+        "t": 3.68,
         "lyric_prev": "",
-        "lyric_current": "Tonight, she's satisfied \\r (Satisfied) Rolling back \\r her eyes",
+        "lyric_current": "Dale otra vez",
         "lyric_next1": "",
         "lyric_next2": ""
     },
     {
-        "t": 9.94,
+        "t": 4.84,
         "lyric_prev": "",
-        "lyric_current": "But then, she starts to \\r cry (To cry) Everything \\r is turning to black",
+        "lyric_current": "Y no te voy a negar",
         "lyric_next1": "",
         "lyric_next2": ""
     },
     {
-        "t": 15.06,
+        "t": 7.38,
         "lyric_prev": "",
-        "lyric_current": "All in one night (One \\r night) She just went to \\r heaven and back (She \\r went)",
+        "lyric_current": "Oh, oh, oh",
         "lyric_next1": "",
         "lyric_next2": ""
     },
     {
-        "t": 20.74,
+        "t": 10.78,
         "lyric_prev": "",
-        "lyric_current": "Yeah, ooh yeah (Oh yeah)",
+        "lyric_current": "Estamos claro y ya",
+        "lyric_next1": "",
+        "lyric_next2": ""
+    },
+    {
+        "t": 13.02,
+        "lyric_prev": "",
+        "lyric_current": "Ah, ah, yeah, yeah, yeah",
+        "lyric_next1": "",
+        "lyric_next2": ""
+    },
+    {
+        "t": 15.9,
+        "lyric_prev": "",
+        "lyric_current": "No te lo voy a negar",
+        "lyric_next1": "",
+        "lyric_next2": ""
+    },
+    {
+        "t": 18.44,
+        "lyric_prev": "",
+        "lyric_current": "Oh, oh, oh",
+        "lyric_next1": "",
+        "lyric_next2": ""
+    },
+    {
+        "t": 21.4,
+        "lyric_prev": "",
+        "lyric_current": "Estamos claro y ya",
+        "lyric_next1": "",
+        "lyric_next2": ""
+    },
+    {
+        "t": 24.1,
+        "lyric_prev": "",
+        "lyric_current": "Yeah, yeah",
         "lyric_next1": "",
         "lyric_next2": ""
     }
