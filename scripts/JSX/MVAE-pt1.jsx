@@ -111,6 +111,8 @@ function main() {
 
         applyColorsToBackground(jobData.job_id, jobData.colors);
         applyColorsWherePresent(newComp, jobData.colors);
+        applyComplementarySpectrumColor(jobData.job_id, jobData.colors[0]);
+
 
         // Beat Sync Spotlight
         try {
@@ -859,6 +861,73 @@ function applyBeatSync(jobId, beatsArray) {
 
     $.writeln(" Beat sync applied with frame-gap falloff.");
 }
+
+function applyComplementarySpectrumColor(jobId, baseHexColor) {
+    try {
+        var comp = findCompByName("Assets " + jobId);
+        if (!comp) {
+            $.writeln("Assets " + jobId + " not found.");
+            return;
+        }
+
+        // Find the 'Black Solid 1' layer
+        var target = null;
+        for (var i = 1; i <= comp.numLayers; i++) {
+            if (comp.layer(i).name === "Black Solid 1") {
+                target = comp.layer(i);
+                break;
+            }
+        }
+
+        if (!target) {
+            $.writeln("Black Solid 1 not found in Assets " + jobId);
+            return;
+        }
+
+        // Find the Audio Spectrum effect
+        var fx = target.property("ADBE Effect Parade").property("Audio Spectrum");
+        if (!fx) {
+            $.writeln("Audio Spectrum effect missing on Black Solid 1 for job " + jobId);
+            return;
+        }
+
+        // Convert hex → RGB (normalized)
+        function hexToRGBnorm(hex) {
+            hex = hex.replace("#", "");
+            return [
+                parseInt(hex.substr(0, 2), 16) / 255,
+                parseInt(hex.substr(2, 2), 16) / 255,
+                parseInt(hex.substr(4, 2), 16) / 255
+            ];
+        }
+
+        // Compute complementary color
+        function complementaryHex(hex) {
+            hex = hex.replace("#", "");
+            var r = 255 - parseInt(hex.substr(0, 2), 16);
+            var g = 255 - parseInt(hex.substr(2, 2), 16);
+            var b = 255 - parseInt(hex.substr(4, 2), 16);
+            return [r / 255, g / 255, b / 255];  // AE normalized RGB
+        }
+
+        var compColor = complementaryHex(baseHexColor);
+
+        // Apply to Inside Color (+1)
+        var inside = fx.property("Inside Color");
+        if (inside) inside.setValue(compColor);
+
+        // Apply to Outside Color (+2)
+        var outside = fx.property("Outside Color");
+        if (outside) outside.setValue(compColor);
+
+        $.writeln("Applied complementary Audio Spectrum color to Assets " + jobId);
+
+    } catch (err) {
+        $.writeln("Error applying complementary spectrum color for job " 
+                   + jobId + ": " + err.toString());
+    }
+}
+
 
 // -----------------------------
 main();
