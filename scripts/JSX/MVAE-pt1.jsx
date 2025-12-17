@@ -109,8 +109,7 @@ function main() {
         updateSongTitle(jobData.job_id, jobData.song_title);
 
 
-        applyColorsToBackground(jobData.job_id, jobData.colors);
-        applyColorsWherePresent(newComp, jobData.colors);
+        applyBackgroundColors(jobData.job_id, jobData.colors);
         applyComplementarySpectrumColor(jobData.job_id, jobData.colors[0]);
 
 
@@ -191,154 +190,6 @@ function toAbsolute(p) {
 
     return f.fsName.replace(/\\/g, "/");
 }
-
-
-function applyColorsToBackground(jobId, colors) {
-    if (!colors || !colors.length) return;
-    var bgName = "BACKGROUND " + jobId;
-    var bgComp;
-    try { bgComp = findCompByName(bgName); } catch (_) { return; }
-
-    // Find the exact layer named "BG GRADIENT"
-    var gradLayer = null;
-    for (var i = 1; i <= bgComp.numLayers; i++) {
-        var lyr = bgComp.layer(i);
-        if (lyr && lyr.name && lyr.name.toUpperCase() === "BG GRADIENT") {
-            gradLayer = lyr;
-            break;
-        }
-    }
-
-    if (!gradLayer) {
-        $.writeln(" No 'BG GRADIENT' layer found in " + bgName);
-        return;
-    }
-
-    // Apply the colors directly
-    var success = set4ColorGradientOnLayer(gradLayer, colors);
-    if (success) {
-        $.writeln(" Applied colors to BG GRADIENT in " + bgName);
-    } else {
-        $.writeln(" BG GRADIENT has no 4-Color Gradient effect in " + bgName);
-    }
-}
-function set4ColorGradientOnLayer(layer, colors) {
-    if (!layer || !(layer instanceof AVLayer)) {
-        $.writeln(" Invalid layer reference in set4ColorGradientOnLayer()");
-        return false;
-    }
-
-    if (!colors || !colors.length) {
-        $.writeln(" No colors provided for " + layer.name);
-        return false;
-    }
-
-    var fxGroup = layer.property("ADBE Effect Parade");
-    if (!fxGroup || fxGroup instanceof Error) {
-        $.writeln(" Layer " + layer.name + " has no Effect Parade");
-        return false;
-    }
-
-    // Find the 4-Color Gradient effect by multiple possible names
-    var fx = null;
-    for (var i = 1; i <= fxGroup.numProperties; i++) {
-        var p = fxGroup.property(i);
-        if (!p) continue;
-        try {
-            var nm = (p.name || "").toLowerCase();
-            var match = p.matchName || "";
-            if (
-                nm.indexOf("4-color gradient") !== -1 ||
-                nm.indexOf("4 color gradient") !== -1 ||
-                match === "ADBE 4ColorGradient" ||
-                match === "ADBE Four-Color Gradient"
-            ) {
-                fx = p;
-                break;
-            }
-        } catch (err) {
-            $.writeln(" Error checking property " + i + " on " + layer.name + ": " + err.toString());
-        }
-    }
-
-    if (!fx || fx instanceof Error) {
-        $.writeln(" No valid 4-Color Gradient effect found on layer: " + layer.name);
-        return false;
-    }
-
-    $.writeln(" Found 4-Color Gradient on layer: " + layer.name);
-
-    var changed = false;
-
-    for (var j = 0; j < Math.min(colors.length, 4); j++) {
-        var col = colors[j];
-        if (!col || typeof col !== "string") continue;
-
-        var rgb = hexToRGB(col);
-        var prop = null;
-
-        try {
-            prop = fx.property("Color " + (j + 1));
-        } catch (err) {
-            $.writeln(" Failed to get Color " + (j + 1) + " on " + layer.name + ": " + err.toString());
-            continue;
-        }
-
-        if (!prop || prop instanceof Error || !prop.setValue) {
-            $.writeln(" Invalid Color " + (j + 1) + " property on " + layer.name);
-            continue;
-        }
-
-        try {
-            prop.setValue(rgb);
-            changed = true;
-            $.writeln(" Set Color " + (j + 1) + " on " + layer.name + " to " + colors[j]);
-        } catch (err) {
-            $.writeln(" Failed to set Color " + (j + 1) + " on " + layer.name + ": " + err.toString());
-        }
-    }
-
-    if (changed)
-        $.writeln(" Successfully applied colors to " + layer.name);
-    else
-        $.writeln(" No colors changed for " + layer.name);
-
-    return changed;
-}
-
-
-
-function applyColorsWherePresent(comp, colors) {
-    if (!comp || !colors || !colors.length) return;
-    $.writeln(" Scanning " + comp.name + " for 4-Color Gradients…");
-
-    for (var i = 1; i <= comp.numLayers; i++) {
-        var lyr = comp.layer(i);
-        if (!lyr.property("Effects")) continue;
-
-        var fx = null;
-        try { fx = lyr.property("Effects")("4-Color Gradient"); } catch (_) {}
-        if (!fx) {
-            try { fx = lyr.property("Effects")("4 Color Gradient"); } catch (_) {}
-        }
-        if (!fx) continue;
-
-        // Apply the gradient colors
-        try {
-            for (var j = 0; j < Math.min(colors.length, 4); j++) {
-                var col = colors[j];
-                if (!col || typeof col !== "string") continue;
-                var rgb = hexToRGB(col);
-                var colorProp = fx.property("Color " + (j + 1));
-                if (colorProp && colorProp.setValue) colorProp.setValue(rgb);
-            }
-            $.writeln(" Applied colors to " + lyr.name + " in " + comp.name);
-        } catch (err) {
-            $.writeln(" Could not update " + lyr.name + ": " + err.toString());
-        }
-    }
-}
-
 
 function hexToRGB(hex) {
     if (!hex || typeof hex !== "string") return [1, 1, 1];
@@ -927,6 +778,39 @@ function applyComplementarySpectrumColor(jobId, baseHexColor) {
                    + jobId + ": " + err.toString());
     }
 }
+function setSolidLayerColor(layer, hex) {
+    if (!layer || !layer.source || !layer.source.mainSource) return;
+
+    try {
+        layer.source.mainSource.color = hexToRGB(hex);
+    } catch (e) {
+        $.writeln(" Failed to recolor layer " + layer.name + ": " + e.toString());
+    }
+}
+
+function applyBackgroundColors(jobId, colors) {
+    if (!colors || colors.length < 2) {
+        $.writeln(" Not enough colors for job " + jobId);
+        return;
+    }
+
+    var bgComp;
+    try {
+        bgComp = findCompByName("BACKGROUND " + jobId);
+    } catch (_) {
+        $.writeln(" BACKGROUND " + jobId + " not found");
+        return;
+    }
+
+    var layer1 = bgComp.layer("COLOUR 1");
+    var layer2 = bgComp.layer("COLOUR 2");
+
+    if (layer1) setSolidLayerColor(layer1, colors[0]);
+    if (layer2) setSolidLayerColor(layer2, colors[1]);
+
+    $.writeln(" Background solids updated for job " + jobId);
+}
+
 
 
 // -----------------------------
