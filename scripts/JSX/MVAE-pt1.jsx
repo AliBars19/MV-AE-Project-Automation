@@ -144,7 +144,13 @@ function main() {
 
         // Add to render queue
         try {
-            var renderPath = addToRenderQueue(outputComp, jobData.job_folder, jobData.job_id);
+            var renderPath = addToRenderQueue(
+                outputComp,
+                jobData.job_folder,
+                jobData.job_id,
+                jobData.song_title
+            );
+
             $.writeln(" Queued: " + renderPath);
         } catch (e) {
             $.writeln(" Render queue error: " + e);
@@ -364,19 +370,24 @@ function setAudioMarkersFromTArray(lyricComp, tAndText) {
 }
 
 
-function addToRenderQueue(comp, jobFolder, jobId) {
+function addToRenderQueue(comp, jobFolder, jobId, songTitle) {
     var root = new Folder(jobFolder).parent;
     var renderDir = new Folder(root.fsName + "/renders");
     if (!renderDir.exists) renderDir.create();
-    var outPath = renderDir.fsName + "/job_" + ("00" + jobId).slice(-3) + ".mp4";
+
+    var safeTitle = sanitizeFilename(songTitle);
+    var filename = safeTitle + ".mp4";
+    var outPath = renderDir.fsName + "/" + filename;
     var outFile = new File(outPath);
 
     var rq = app.project.renderQueue.items.add(comp);
     try { rq.applyTemplate("Best Settings"); } catch (e) {}
     try { rq.outputModule(1).applyTemplate("H.264"); } catch (e) {}
     rq.outputModule(1).file = outFile;
+
     return outPath;
 }
+
 
 function splitLongLines(line, maxLen) {
     if (!line || typeof line !== "string") return [];
@@ -812,6 +823,14 @@ function applyBackgroundColors(jobId, colors) {
 }
 
 
+function sanitizeFilename(name) {
+    if (!name) return "untitled";
+
+    return String(name)
+        .replace(/[\/\\:*?"<>|]/g, "")   // illegal chars
+        .replace(/\s+/g, " ")            // collapse spaces
+        .replace(/^\s+|\s+$/g, "");      // trim
+}
 
 // -----------------------------
 main();
